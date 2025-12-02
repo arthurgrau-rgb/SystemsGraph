@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XA | Systems Graph prototype</title>
+    
+    <!-- 1. D3.js Library -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <!-- 2. Styles (CSS) -->
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+            color: #333;
+            overflow: hidden; /* Prevent body scrolling */
+        }
+        #graph-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background-color: #ffffff;
+            cursor: default; /* Default cursor */
+        }
+        svg.grabbing {
+            cursor: grabbing; /* Cursor when panning */
+        }
+        .node {
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+        }
+        /* Make stroked nodes clickable on their whole area */
+        .node path[fill-opacity="0.01"] {
+            pointer-events: all; /* Make invisible fill clickable */
+        }
+        .node path:hover {
+            filter: brightness(1.2);
+        }
+        .link {
+            stroke-width: 1px;
+            /* UPDATED: Lighter gray color for links */
+            stroke: #ccc; 
+            stroke-opacity: 0.6;
+            transition: opacity 0.3s ease;
+        }
+        .label {
+            font-size: 10px;
+            fill: #333;
+            pointer-events: none; /* Labels don't block mouse events */
+            transition: opacity 0.3s ease;
+            text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, -1px 0 0 #fff;
+            
+        }
+        /* UPDATED: Link label styles */
+        .link-label {
+            font-size: 8px;
+            fill: #bcbcbc;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, -1px 0 0 #fff;
+        }
+
+        /* Legend */
+        .legend {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #e0e0e0;
+            max-height: calc(100vh - 80px); /* Max height for scrolling */
+            overflow-y: auto; /* Enable scrolling for legend */
+            z-index: 10;
+        }
+        .legend h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .legend-swatch {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0; /* Prevent swatch from shrinking */
+        }
+        .legend-swatch svg {
+            width: 18px;
+            height: 18px;
+            background-color: transparent; /* Ensure SVG has no bg */
+            overflow: visible;
+        }
+        .legend-label {
+            font-size: 14px;
+        }
+
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            opacity: 0;
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            pointer-events: none; /* Tooltip shouldn't block mouse */
+            font-size: 12px;
+            max-width: 300px;
+            transition: opacity 0.2s;
+            line-height: 1.5;
+            z-index: 20;
+        }
+        #tooltip strong {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 5px;
+            color: #000;
+        }
+        #tooltip div {
+            margin-bottom: 4px;
+        }
+        #tooltip .tooltip-key {
+            font-weight: 600;
+            color: #555;
+            text-transform: capitalize;
+        }
+        #tooltip .tooltip-value-red {
+            color: #F50924;
+            font-weight: 600;
+        }
+        /* UPDATED: Added temporary debug info style */
+        #tooltip .tooltip-debug {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #ccc;
+            font-family: monospace;
+            font-size: 11px;
+            color: #777;
+        }
+
+
+        /* Header Info */
+        .header-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            text-align: right;
+            color: #555;
+            z-index: 10;
+        }
+        .header-info h1 {
+            font-size: 24px;
+            margin: 0 0 5px 0;
+            font-weight: 600;
+        }
+        .header-info p {
+            font-size: 14px;
+            margin: 0;
+        }
+        @keyframes fadeInLabel {
+            to { opacity: 1; }
+        }
+        
+    </style>
+</head>
+<body>
+
+    <!-- 3. HTML Structure -->
+    <div id="graph-container">
+        <!-- The D3 graph will be rendered here -->
+        <svg></svg>
+
+        <!-- Tooltip element -->
+        <div id="tooltip"></div>
+
+        <!-- Legend (will be dynamically populated) -->
+        <div class="legend">
+             <h3>Legend</h3>
+             <div id="legend-content"></div>
+        </div>
+
+        <!-- Header Info -->
+        <div class="header-info">
+            <h1>XA | Systems Graph prototype</h1>
+            <p>Click a node for 2-Degree Separation | Drag to Pin</p>
+            <p>Scroll to Zoom | Spacebar + Drag to Pan</p>
+        </div>
+    </div>
+
+    <!-- 4. D3.js and Graph Logic -->
+    <script>
+        // --- DATA (from nodes_relationships.csv) ---
+        
+        // =======================================================================
+        // ==  1. PASTE YOUR NEW CSV DATA HERE                                  ==
+        // =======================================================================
+        // Paste the entire contents of your "nodes_relationships.csv" file
+        // inside the backticks (`...`) below.
+        // =======================================================================
+        
+        const csvDataString = `Join_EID,Source_ID,Source_type,Source_label,Source_description,Predicate,Predicate_label,Target_ID,Target_type,Target_label,Target_description,Target_format,Target_service_level,Target_subcategory
+mg_1,psna_0,Human,A Person,A Verizon Customer,has,has,int_6,Intent,Get Service,Get home internet ,,,
+mg_65,int_6,Intent,Get Service,Get home internet ,uses,uses,ch_10,Channel,Verizon Website,verizon.com,,,
+mg_64,int_6,Intent,Get Service,Get home internet ,uses,uses,ch_7,Channel,Chat,verizon com/digital/nsa/nos/ui/ngd/contactus,,,
+mg_63,int_6,Intent,Get Service,Get home internet ,uses,uses,ch_11,Channel,Retail Visit,Comes into a store,,,
+mg_62,int_6,Intent,Get Service,Get home internet ,uses,uses,ch_12,Channel,Verizon 800 Number,800-225-5499,,,
+mg_116,psna_0,Human,A Person,A Verizon Customer,has,has,int_1,Intent,Get Service,Switch to Verizon Mobile,,,
+mg_120,ch_10,Channel,Verizon Website,verizon.com,creates,creates,acc_1,Account,Mobile Account,,,,
+mg_117,ch_7,Channel,Chat,verizon com/digital/nsa/nos/ui/ngd/contactus,creates,creates,acc_1,Account,Mobile Account,,,,
+mg_118,ch_11,Channel,Retail Visit,Comes into a store,creates,creates,acc_1,Account,Mobile Account,,,,
+mg_119,ch_12,Channel,Verizon 800 Number,800-225-5499,creates,creates,acc_1,Account,Mobile Account,,,,
+mg_71,ch_10,Channel,Verizon Website,verizon.com,gate,authenticates,auth_1,Authentication,Username + Password,,,,
+mg_70,ch_7,Channel,Chat,verizon com/digital/nsa/nos/ui/ngd/contactus,gate,authenticates,auth_7,Authentication,Manual,,,,
+mg_69,ch_11,Channel,Retail Visit,Comes into a store,gate,authenticates,auth_7,Authentication,Manual,,,,
+mg_68,ch_12,Channel,Verizon 800 Number,800-225-5499,gate,authenticates,auth_7,Authentication,Manual,,,,
+mg_67,ch_10,Channel,Verizon Website,verizon.com,creates,creates,acc_2,Account,Fios Account,,,,
+mg_73,ch_7,Channel,Chat,verizon com/digital/nsa/nos/ui/ngd/contactus,creates,creates,acc_2,Account,Fios Account,,,,
+mg_72,ch_11,Channel,Retail Visit,Comes into a store,creates,creates,acc_2,Account,Fios Account,,,,
+mg_66,ch_12,Channel,Verizon 800 Number,800-225-5499,creates,creates,acc_2,Account,Fios Account,,,,
+mg_93,acc_2,Account,Fios Account,,requires,requires,cc_1,Credit Check,Credit Verification,,,,
+mg_74,acc_2,Account,Fios Account,,owns,owns,prod_54,Product,Fios 1 Gig,High-speed fiber-optic home internet with up to 940 Mbps download speeds. Equipment and Whole Home Wi-Fi included,,,Home internet plans
+mg_122,acc_1,Account,Mobile Account,,requires,requires,cc_1,Credit Check,Credit Verification,,,,
+mg_123,acc_1,Account,Mobile Account,,owns,owns,prod_236,Product,Mobile Plan,"National data, talk, and text for phones.",,,
+mg_2,prod_54,Product,Fios 1 Gig Internet,High-speed fiber-optic home internet with up to 940 Mbps download speeds. Equipment and Whole Home Wi-Fi included,managed_with,managed with,prod_296,Product,My Verizon Online,An online service account access portal for mobile apps on Android and iPhone,,,Customer Service
+mg_3,prod_54,Product,Fios 1 Gig Internet,High-speed fiber-optic home internet with up to 940 Mbps download speeds. Equipment and Whole Home Wi-Fi included,managed_with,managed with,prod_295,Product,My Verizon App,An online service account access portal for mobile apps on Android and iPhone,,,Customer Service
+mg_75,acc_2,Account,Fios Account,,contains,contains,acat_3,Account Attribute,Account Role,,,,
+mg_76,acc_2,Account,Fios Account,,contains,contains,acat_4,Account Attribute,Account Number,,,,
+mg_77,acc_2,Account,Fios Account,,contains,contains,acat_5,Account Attribute,Security Question,,,,
+mg_82,acc_2,Account,Fios Account,,contains,contains,acat_6,Account Attribute,Account PIN,,,,
+mg_84,acc_2,Account,Fios Account,,contains,contains,acat_7,Account Attribute,Service Address,,,,
+mg_83,acc_2,Account,Fios Account,,contains,contains,acat_8,Account Attribute,Billing Address,,,,
+mg_78,acc_2,Account,Fios Account,,contains,contains,acat_9,Account Attribute,Mailing Address,,,,
+mg_81,acc_2,Account,Fios Account,,contains,contains,acat_10,Account Attribute,Security Rating,,,,
+mg_80,acc_2,Account,Fios Account,,contains,contains,acat_11,Account Attribute,Device Type,,,,
+mg_86,acc_2,Account,Fios Account,,contains,contains,id_3,Identity Attribute,Salutation,,,,
+mg_91,acc_2,Account,Fios Account,,contains,contains,id_4,Identity Attribute,First Name,,,,
+mg_92,acc_2,Account,Fios Account,,contains,contains,id_5,Identity Attribute,Middle Name,,,,
+mg_88,acc_2,Account,Fios Account,,contains,contains,id_6,Identity Attribute,Last Name,,,,
+mg_89,acc_2,Account,Fios Account,,contains,contains,id_7,Identity Attribute,Suffix,,,,
+mg_90,acc_2,Account,Fios Account,,contains,contains,id_8,Identity Attribute,Greeting Name,,,,
+mg_87,acc_2,Account,Fios Account,,contains,contains,id_9,Identity Attribute,Preferred Name,,,,
+mg_85,acc_2,Account,Fios Account,,contains,contains,id_10,Identity Attribute,Preferred Pronouns (NY only),,,,
+mg_79,acc_2,Account,Fios Account,,contains,contains,id_11,Identity Attribute,Billing Address,,,,
+mg_94,acc_2,Account,Fios Account,,contains,contains,id_12,Identity Attribute,Mailing Address,,,,
+mg_95,acc_2,Account,Fios Account,,contains,contains,id_13,Identity Attribute,Primary Contact Number (CBR),,,,
+mg_96,acc_2,Account,Fios Account,,contains,contains,id_15,Identity Attribute,Email Address,,,,
+mg_105,acc_2,Account,Fios Account,,uses,uses,dvc_37,Device,Verizon Router,Home equipment that allows you to connect all devices on your home network to the internet.,,,
+mg_115,dvc_37,Device,Verizon Router,Home equipment that allows you to connect all devices on your home network to the internet.,has,has,dvid_2,Device Identifier,MAC Address,Medium (or media) access control address is a unique ID assigned to a network adapter (e.g. Wi-Fi card) to ID that device on the network.,,,
+mg_114,dvc_37,Device,Verizon Router,Home equipment that allows you to connect all devices on your home network to the internet.,has,has,dvid_7,Device Identifier,Device ID,,,,
+mg_124,dvc_37,Device,Verizon Router,,has_attribute,has attribute,dvid_1,Device Identifier,IMEI,,,,
+mg_125,dvc_37,Device,Verizon Router,,has,has,dvid_8,Device Identifier,Device Type,,,,
+mg_126,dvc_37,Device,Verizon Router,,has,has,dvid_5,Device Identifier,Model,,,,
+mg_127,dvc_37,Device,Verizon Router,,has,has,dvid_3,Device Identifier,Make,,,,
+mg_128,dvc_37,Device,Verizon Router,,has,has,dvid_6,Device Identifier,Serial Number,,,,
+mg_97,rol_0,Role,Account Holder,Primary account holder,has_role,uses role,acc_2,Account,Fios Home Internet,,,,
+mg_98,psna_0,Human,A Person,A Verizon Customer,has,has,rol_0,Role,Account Holder,Primary account holder,,,
+mg_4,rol_0,Role,Account Holder,Primary account holder,assigns,assigns,rol_2,Role,Account Manager,,,,
+mg_99,rol_0,Role,Account Holder,Primary account holder,assigns,assigns,rol_3,Role,Account Member,,,,
+mg_100,rol_0,Role,Account Holder,Primary account holder,assigns,assigns,dvc_5,Device,Apple Tablet,The latest Apple tablets offered by Verizon.,,,
+mg_101,rol_0,Role,Account Holder,Primary account holder,assigns,assigns,dev_74,Device,Sony Playstation Console,An electronic home device that outputs a video signal to display a video game that can be played with a controller.,,,
+mg_110,dvc_5,Device,Apple Tablet,The latest Apple tablets offered by Verizon.,has,has,dvid_7,Device Identifier,Device ID,,,,
+mg_111,dvc_74,Device,Sony Playstation Console,An electronic home device that outputs a video signal to display a video game that can be played with a controller.,has,has,dvid_2,Device Identifier,MAC Address,Medium (or media) access control address is a unique ID assigned to a network adapter (e.g. Wi-Fi card) to ID that device on the network.,,,
+mg_112,dvc_5,Device,Apple Tablet,The latest Apple tablets offered by Verizon.,has,has,dvid_7,Device Identifier,Device ID,,,,
+mg_113,dvc_74,Device,Sony Playstation Console,An electronic home device that outputs a video signal to display a video game that can be played with a controller.,has,has,dvid_2,Device Identifier,MAC Address,Medium (or media) access control address is a unique ID assigned to a network adapter (e.g. Wi-Fi card) to ID that device on the network.,,,
+mg_102,rol_0,Role,Account Holder,Primary account holder,has,has,cap_9,Capability,Individual User Wallet,,,,
+mg_106,rol_0,Role,Account Holder,Primary account holder,has,has,cap_10,Individual Profile,Verizon Individual Profile (VIP),,,,
+mg_107,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_1,Identity Attribute,Customer ID,,Current,VZ Visible,
+mg_108,,,,,,,,,,,Future,VZ Visible,
+mg_109,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_3,Identity Attribute,Salutation,,Depreciated,User Visible,
+mg_103,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_4,Identity Attribute,First Name,,Current,User Visible,
+mg_104,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_5,Identity Attribute,Middle Name,,Current,User Visible,
+mg_5,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_6,Identity Attribute,Last Name,,Current,User Visible,
+mg_6,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_7,Identity Attribute,Suffix,,Current,User Visible,
+mg_7,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_8,Identity Attribute,Greeting Name,,Current,User Visible,
+mg_8,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_9,Identity Attribute,Preferred Name,,Future,User Visible,
+mg_9,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_10,Identity Attribute,Preferred Pronouns (NY only),,Current,User Visible,
+mg_10,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_11,Identity Attribute,Billing Address,,Current,User Visible,
+mg_11,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_12,Identity Attribute,Mailing Address,,Current,User Visible,
+mg_12,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_13,Identity Attribute,Primary Contact Number,,Current,User Visible,
+mg_13,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_15,Identity Attribute,Email Address,,Current,User Visible,
+mg_14,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_16,Identity Attribute,Birth Date,,Future,User Visible,
+mg_15,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_18,Identity Attribute,Mobile Number,,Current,User Visible,
+mg_16,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_19,Identity Attribute,Phone Number,,Current,User Visible,
+mg_17,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,has_attribute,has,id_20,Identity Attribute,Profile Image,,Current,User Visible,
+mg_18,acc_2,Account,Fios Home account,,if_connected,if user connects,cap_10,Individual Profile,Verizon Individual Profile (VIP),Backend architecture that links an individual (person) to their Verizon online identity,,,
+mg_19,acc_1,Account,Mobile Account,The billing account associated with a mobile plan,if_connected,if user connects,cap_10,Capability,Verizon Individual Profile (VIP),Backend architecture that links an individual (person) to their Verizon online identity,,,
+mg_129,cap_10,Individual Profile,Verizon Individual Profile (VIP),Backend architecture that links an individual (person) to their Verizon online identity,has_attribute,has,id_2,Identity Attribute,Universal Identifier (UID),,,,
+mg_130,cap_10,Individual Profile,Verizon Individual Profile (VIP),Backend architecture that links an individual (person) to their Verizon online identity,has_attribute,has,id_4,Identity Attribute,First Name,,Current,User Visible,
+mg_131,cap_10,Individual Profile,Verizon Individual Profile (VIP),Backend architecture that links an individual (person) to their Verizon online identity,has_attribute,has,id_15,Identity Attribute,Email Address,,Current,User Visible,
+mg_132,cap_10,Individual Profile,Verizon Individual Profile (VIP),Backend architecture that links an individual (person) to their Verizon online identity,has_attribute,has,id_15,Identity Attribute,Email Address,,Current,User Visible,
+mg_133,cap_10,Individual Profile,Verizon Individual Profile (VIP),Backend architecture that links an individual (person) to their Verizon online identity,has_attribute,has,id_9,Identity Attribute,Preferred Name,,Future,User Visible,
+mg_134,,,,,,,,,,,,,
+mg_20,prod_277,Product,Verizon Home (app),,manages,manages,acc_2,Account,Fios Home account,,,,
+mg_21,prod_277,Product,Verizon Home (app),,manages,manages,dvc_37,Device,Verizon Router,,,,
+mg_22,acc_2,Account,Fios Home account,,sets,sets,id_23,Sub Account,Sub account holder name,,,,
+mg_23,acc_2,Account,Fios Home account,,has,has,id_15,Identity Attribute,Email Address,,,,
+mg_24,acc_2,Account,Fios Home account,,has,has,set_17,Setting,Line of Business,,,,
+mg_25,acc_2,Account,Fios Home account,,has_attribute,has attribute,set_14,Setting,WiFi Password,,,,
+mg_26,cap_10,Individual Profile,Verizon Individual Profile (VIP),Backend architecture that links an individual (person) to their Verizon online identity,uses,uses,cap_8,Capability,"1VZID, Backend system used to manage Verizon Individual Profiles",,,,
+mg_27,cap_8,Capability,1VZID - Backend system used to manage Verizon Individual Profiles,,stored,is stored in,db_1,Database,Cosmos,,,,`;
+
+        // --- DESIGN SYSTEM ---
+        // This is our "single source of truth" for all classes.
+        // =======================================================================
+        // ==  Cut and paste an exiarinf class to create new class attributes.  ==
+        // ==  Classes are documented in the airtable.                          ==
+        // ======================================================================= 
+        const styleConfig = {
+            'Ability': {
+                symbol: d3.symbolTriangle,
+                color: "#6B36AE",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Account': {
+                symbol: d3.symbolDiamond2,
+                color: "#E10014",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+             'Account Attribute': {
+                symbol: d3.symbolPlus,
+                color: "#E10014",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+            'Account Profile': {
+                symbol: d3.symbolDiamond2,
+                color: "#E10014",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Authentication': {
+                symbol: d3.symbolTimes,
+                color: "#9D2B69",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Capability': {
+                symbol: d3.symbolSquare,
+                color: "#1E1E1E",
+                size: 200,
+                style: "Fill",
+                radius: 10
+            },
+            'Channel': {
+                symbol: d3.symbolCircle,
+                color: "#9D2B69",
+                size: 200,
+                style: "Fill",
+                radius: 10
+            },
+            'Credentential': {
+                symbol: d3.symbolTimes,
+                color: "#FABBC3",
+                size: 130,
+                style: "Stroke",
+                radius: 10
+            },
+            'Credit Check': {
+                symbol: d3.symbolTimes,
+                color: "#1E1E1E",
+                size: 200,
+                style: "Stroke",
+                radius: 10
+            },
+            'Database': {
+                symbol: d3.symbolPlus,
+                color: "#1E1E1E",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+            'Derived': {
+                symbol: d3.symbolDiamond2,
+                color: "#1E1E1E",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Device': {
+                symbol: d3.symbolSquare2,
+                color: "#E10014",
+                size: 200,
+                style: "Stroke",
+                radius: 10
+            },
+            'Device Group': {
+                symbol: d3.symbolCircle,
+                color: "#E10014",
+                size: 130,
+                style: "Stroke",
+                radius: 8
+            },
+            'Device Identifier': {
+                symbol: d3.symbolPlus,
+                color: "#FABBC3",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+             'Event': {
+                symbol: d3.symbolStar,
+                color: "#FABBC3",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+              'Interaction': {
+                symbol: d3.symbolAsterisk,
+                color: "#FABBC3",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Group': {
+                symbol: d3.symbolCircle,
+                color: "#6B36AE",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Human': {
+                symbol: d3.symbolStar,
+                color: "#6B36AE",
+                size: 500, // User request
+                style: "Fill",
+                radius: 11
+            },
+            'Identity Attribute': {
+                symbol: d3.symbolPlus,
+                color: "#9D2B69",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+            'Individual Profile': {
+                symbol: d3.symbolDiamond2,
+                color: "#9D2B69",
+                size: 600,
+                style: "Fill",
+                radius: 8
+            },
+            'Intent': {
+                symbol: d3.symbolTriangle,
+                color: "#6B36AE",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Line': {
+                symbol: d3.symbolWye,
+                color: "#E10014",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Line Attribute': {
+                symbol: d3.symbolWye,
+                color: "#FABBC3",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+             'Organization': {
+                symbol: d3.symbolDiamond2,
+                color: "#9D2B69",
+                size: 250,
+                style: "Stroke",
+                radius: 8
+            },
+            'Payment': {
+                symbol: d3.symbolAsterisk,
+                color: "#9D2B69",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Permission': {
+                symbol: d3.symbolDiamond,
+                color: "#9D2B69",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Preference': {
+                symbol: d3.symbolTriangle,
+                color: "#9D2B69",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Product': {
+                symbol: d3.symbolSquare,
+                color: "#E10014",
+                size: 400, // User request
+                style: "Fill",
+                radius: 14 // Collision radius
+            },
+            'Role': {
+                symbol: d3.symbolCircle,
+                color: "#6B36AE",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Service': {
+                symbol: d3.symbolSquare2,
+                color: "#FABBC3",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Session': {
+                symbol: d3.symbolTriangle2,
+                color: "#9D2B69",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Setting': {
+                symbol: d3.symbolTimes,
+                color: "#A0A0A0",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Sub Account': {
+                symbol: d3.symbolDiamond2,
+                color: "#FABBC3",
+                size: 130,
+                style: "Stroke",
+                radius: 8
+            },
+            'Unknown': { // Fallback for unmatched types
+                symbol: d3.symbolCircle,
+                color: "#ced4da",
+                size: 100,
+                style: "Fill",
+                radius: 7
+            }
+        };
+
+        // --- D3 SETUP ---
+
+        // 1. Core Graph Elements
+        const svg = d3.select("svg");
+        const width = +svg.node().getBoundingClientRect().width;
+        const height = +svg.node().getBoundingClientRect().height;
+        const tooltip = d3.select("#tooltip");
+        const legendContent = d3.select("#legend-content");
+
+        // 2. Main Container (for zoom/pan)
+        const zoomContainer = svg.append("g");
+        const container = zoomContainer.append("g");
+
+        const linkGroup = container.append("g").attr("class", "links");
+        // UPDATED: Add link label group
+        const linkLabelGroup = container.append("g").attr("class", "link-labels");
+        const nodeGroup = container.append("g").attr("class", "nodes");
+        const labelGroup = container.append("g").attr("class", "labels");
+
+        // 3. Physics Simulation
+        const simulation = d3.forceSimulation()
+            .force("link", d3.forceLink().id(d => d.id).distance(200))
+            .force("charge", d3.forceManyBody().strength(-20))
+            .force("collide", d3.forceCollide().radius(d => d.radius + 10).iterations(2))
+            .force("center", d3.forceCenter(width / 2, height / 2).strength(0.9)) // STRONGER pull to center
+            .velocityDecay(0.9) // MORE friction to stop "creep"
+            // --- END CHANGES ---
+
+            .on("tick", ticked);
+
+        // 4. State Variables
+        let isSpacebarPressed = false;
+        let linkedByIndex = {}; // For 1-degree filter
+
+        // 5. UI Event Listeners
+        d3.select("body").on("keydown", handleKeyDown);
+        d3.select("body").on("keyup", handleKeyUp);
+
+        // --- DATA PROCESSING (V2) ---
+
+        /**
+         * Converts CSV headers (e.g., "Target_service_level") to camelCase ("serviceLevel").
+         */
+        function toCamelCase(s) {
+            if (!s) return s;
+            return s.replace(/([-_][a-z])/ig, ($1) => {
+                return $1.toUpperCase()
+                    .replace('-', '')
+                    .replace('_', '');
+            });
+        }
+
+        /**
+         * Processes the raw CSV data into a clean {nodes, links} graph structure.
+         */
+        function processData(data) {
+            const nodes = new Map();
+            const links = [];
+
+            // Helper to get style from config, with a fallback to 'Unknown'
+            function getStyle(type) {
+                return styleConfig[type] || styleConfig['Unknown'];
+            }
+
+            // Helper to add or merge node data
+            function addOrUpdateNode(id, type, label, data = {}) {
+                if (!id) return; // safety check
+                
+                const nodeType = type || 'Unknown';
+                
+                if (!nodes.has(id)) {
+                    // Create new node
+                    const style = getStyle(nodeType);
+                    nodes.set(id, {
+                        id: id,
+                        type: nodeType,
+                        label: label || id, // Use label or ID if no label
+                        ...style, // Spread all style properties
+                        ...data // Add all extra properties
+                    });
+                } else {
+                    // Merge properties if node already exists
+                    const node = nodes.get(id);
+                    for (const key in data) {
+                        if ((!node[key] || node[key] === null || node[key] === undefined) && data[key]) {
+                            node[key] = data[key];
+                        }
+                    }
+                    // UPDATED: Always prioritize a new, non-generic label
+                    if (label && label !== node.id) {
+                        node.label = label;
+                    }
+                    if (node.type === 'Unknown' && nodeType !== 'Unknown') {
+                        node.type = nodeType;
+                        const style = getStyle(nodeType);
+                        Object.assign(node, style); // Update style
+                    }
+                }
+            }
+            
+            const cleanData = data.filter(row => row.Join_EID && row.Source_ID && row.Target_ID);
+
+            cleanData.forEach(row => {
+                // 1. Extract Source Node
+                const sourceData = {};
+                for (const key in row) {
+                    if (key.startsWith("Source_") && !["Source_ID", "Source_type", "Source_label"].includes(key)) {
+                        sourceData[toCamelCase(key.replace("Source_", ""))] = row[key];
+                    }
+                }
+                addOrUpdateNode(row.Source_ID, row.Source_type, row.Source_label, sourceData);
+
+                // 2. Extract Target Node
+                const targetData = {};
+                for (const key in row) {
+                    if (key.startsWith("Target_") && !["Target_ID", "Target_type", "Target_label"].includes(key)) {
+                        targetData[toCamelCase(key.replace("Target_", ""))] = row[key];
+                    }
+                }
+                targetData.description = row.Target_description || row.Description;
+                addOrUpdateNode(row.Target_ID, row.Target_type, row.Target_label, targetData);
+
+                // 3. Create Link
+                links.push({
+                    id: row.Join_EID,
+                    source: row.Source_ID,
+                    target: row.Target_ID,
+                    predicate: row.Predicate,
+                    label: row.Predicate_label || "" // Use label or empty string
+                });
+            });
+
+            return { nodes: Array.from(nodes.values()), links: links };
+        }
+
+        // --- LEGEND RENDERING ---
+
+        /**
+         * Dynamically builds the legend from the styleConfig object.
+         */
+        function buildLegend() {
+            legendContent.html(""); // Clear existing legend
+
+            Object.keys(styleConfig).forEach(className => {
+                if (className === 'Unknown') return; // Don't show Unknown in legend
+
+                const style = styleConfig[className];
+                const item = legendContent.append("div").attr("class", "legend-item");
+                
+                const swatch = item.append("div").attr("class", "legend-swatch");
+                const svgSwatch = swatch.append("svg")
+                    .attr("viewBox", "-10 -10 20 20");
+                
+                const symbolGenerator = d3.symbol()
+                    .type(style.symbol)
+                    .size(style.size * 0.5); // Smaller size for legend
+
+                svgSwatch.append("path")
+                    .attr("d", symbolGenerator)
+                    .attr("fill", style.style === "Fill" ? style.color : "#FFFFFF") // Use white for stroke
+                    .attr("fill-opacity", style.style === "Stroke" ? 0.01 : 1) // Make stroke clickable
+                    .attr("stroke", style.style === "Stroke" ? style.color : style.color) // Use color for both
+                    .attr("stroke-width", style.style === "Stroke" ? 2.5 : 0);
+                
+                item.append("div").attr("class", "legend-label").text(className);
+            });
+        }
+
+
+        // --- D3 RENDERING ---
+
+        let node;
+        let link;
+        let label;
+        let linkLabel; // UPDATED: Link label selection
+
+        /**
+         * Main draw function.
+         */
+        function updateGraph(graph) {
+            
+            linkedByIndex = {};
+            graph.links.forEach(d => {
+                const sourceId = d.source.id || d.source;
+                const targetId = d.target.id || d.target;
+                linkedByIndex[`${sourceId},${targetId}`] = 1;
+            });
+
+            link = linkGroup
+                .selectAll("line")
+                .data(graph.links, d => d.id)
+                .join("line")
+                .attr("class", "link");
+            
+            // UPDATED: Add link labels
+            linkLabel = linkLabelGroup.selectAll(".link-label")
+                .data(graph.links, d => d.id)
+                .join("text")
+                .attr("class", "link-label")
+                .attr("text-anchor", "middle")
+                .text(d => d.label); // Use the predicate label from data
+
+            node = nodeGroup
+                .selectAll(".node")
+                .data(graph.nodes, d => d.id)
+                .join("g")
+                .attr("class", "node")
+                .call(drag(simulation))
+                .on("click", clickNode);
+
+            node.append("path")
+                .attr("d", d3.symbol().type(d => d.symbol).size(d => d.size)) // Use 'size' from config
+                .attr("fill", d => d.style === "Fill" ? d.color : "#FFFFFF") // Use white fill for strokes
+                .attr("fill-opacity", d => d.style === "Stroke" ? 0.01 : 1) // 0.01 is "invisible but clickable"
+                .attr("stroke", d => d.style === "Stroke" ? d.color : "none")
+                .attr("stroke-width", d => d.style === "Stroke" ? 2.5 : 0);
+            
+            label = labelGroup
+                .selectAll(".label")
+                .data(graph.nodes, d => d.id)
+                .join("text")
+                .attr("class", "label")
+                // Remove initial x/y, 'ticked' will handle it
+                .attr("text-anchor", "start")
+                .attr("dy", ".35em")
+                .text(d => d.label);
+
+            node.on("mouseover", showTooltip)
+                .on("mousemove", moveTooltip)
+                .on("mouseout", hideTooltip);
+            
+            link
+                .on("mouseover", showLinkTooltip)
+                .on("mousemove", moveTooltip)
+                .on("mouseout", hideTooltip);
+            linkLabel
+                .on("mouseover", (event, d) => showLinkTooltip(event, d.link)) // Get link data from label
+                .on("mousemove", moveTooltip)
+                .on("mouseout", hideTooltip);
+
+            simulation.nodes(graph.nodes);
+            simulation.force("link").links(graph.links);
+            simulation.alpha(1).restart();
+        }
+
+        /**
+         * Simulation "tick" function.
+         */
+        function ticked() {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            node
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+
+            label
+                .attr("x", d => d.x + (d.radius || 10) + 8)
+                .attr("y", d => d.y);
+            
+            // UPDATED: Position link labels
+            linkLabel
+                .attr("x", d => (d.source.x + d.target.x) / 2)
+                .attr("y", d => (d.source.y + d.target.y) / 2);
+        }
+
+        // --- UI INTERACTIONS ---
+
+        // 1. Tooltip
+        function showTooltip(event, d) {
+            tooltip.transition().duration(200).style("opacity", .95);
+            
+            let htmlContent = `<strong>${d.label}</strong>`;
+            if (d.type && d.type !== 'Unknown') {
+                htmlContent += `<div>Type: ${d.type}</div>`;
+            }
+            
+            const ignoreKeys = ['id', 'label', 'type', 'x', 'y', 'vx', 'vy', 'fx', 'fy', 'index', 'color', 'symbol', 'symbolSize', 'symbolStyle', 'radius', 'description', 'size'];
+            
+            if (d.description && d.description !== "null") {
+                 htmlContent += `<div>${d.description}</div>`;
+            }
+
+            for (const key in d) {
+                if (!ignoreKeys.includes(key) && d[key] && d[key] !== "null") {
+                    const displayKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    
+                    if (d.type === 'Identity' && key === 'localName' && d.label !== d.localName) {
+                        htmlContent += `<div><span class="tooltip-key">${displayKey}:</span> <span class="tooltip-value-red">${d[key]}</span></div>`;
+                    } else {
+                        htmlContent += `<div><span class="tooltip-key">${displayKey}:</span> ${d[key]}</div>`;
+                    }
+                }
+            }
+            
+            // UPDATED: Add debug info
+            htmlContent += `<div class="tooltip-debug">ID: ${d.id}</div>`;
+
+            tooltip.html(htmlContent)
+                .style("left", (event.pageX + 25) + "px")
+                .style("top", (event.pageY - 18) + "px");
+        }
+        
+        // UPDATED: Tooltip for Links
+        function showLinkTooltip(event, d) {
+            tooltip.transition().duration(200).style("opacity", .95);
+            
+            let htmlContent = `<strong>${d.predicate}</strong>`;
+            htmlContent += `<div>(${d.source.label} → ${d.target.label})</div>`;
+            
+            // UPDATED: Add debug info
+            htmlContent += `<div class="tooltip-debug">Join_EID: ${d.id}</div>`;
+
+            tooltip.html(htmlContent)
+                .style("left", (event.pageX + 25) + "px")
+                .style("top", (event.pageY - 18) + "px");
+        }
+
+        function moveTooltip(event) {
+            tooltip.style("left", (event.pageX + 25) + "px")
+                   .style("top", (event.pageY - 18) + "px");
+        }
+
+        function hideTooltip() {
+            tooltip.transition().duration(500).style("opacity", 0);
+        }
+
+        // 2. Pan and Zoom
+        const zoomHandler = d3.zoom()
+            .scaleExtent([0.1, 8])
+            .filter(event => isSpacebarPressed) // Only zoom/pan if spacebar is pressed
+            .on("zoom", (event) => {
+                zoomContainer.attr("transform", event.transform);
+            });
+
+        svg.call(zoomHandler);
+
+        svg.on("wheel", (event) => {
+            event.preventDefault();
+            const currentTransform = d3.zoomTransform(svg.node());
+            let scaleFactor;
+            // platform-specific zoom factor
+            if (event.ctrlKey) {
+                 scaleFactor = event.deltaY > 0 ? 0.7 : 1.3; // Faster zoom for Ctrl+Wheel
+            } else {
+                 scaleFactor = event.deltaY > 0 ? 0.95 : 1.05; // Slower, smoother zoom
+            }
+            
+            const [x, y] = d3.pointer(event);
+            
+            const newTransform = currentTransform.translate(x, y).scale(scaleFactor).translate(-x, -y);
+
+            svg.transition().duration(50).call(zoomHandler.transform, newTransform);
+        });
+
+
+        // 3. Pan Listeners
+        function handleKeyDown(event) {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                isSpacebarPressed = true;
+                svg.classed("grabbing", true);
+            }
+        }
+
+        function handleKeyUp(event) {
+            if (event.code === 'Space') {
+                isSpacebarPressed = false;
+                svg.classed("grabbing", false);
+            }
+        }
+
+        // 4. Click to Filter (2-Degrees Separation)
+        let isFiltered = false;
+        let activeNode = null;
+
+        function clickNode(event, d) {
+            if (isSpacebarPressed) return;
+
+            if (activeNode === d.id) {
+                resetGraphView();
+            } else {
+                 activeNode = d.id;
+                 isFiltered = true;
+                 
+                 // Rebuild the adjacency lookup (no change here)
+                 linkedByIndex = {}; 
+                 graph.links.forEach(l => {
+                    const sourceId = l.source.id || l.source;
+                    const targetId = l.target.id || l.target;
+                    linkedByIndex[`${sourceId},${targetId}`] = 1;
+                    linkedByIndex[`${targetId},${sourceId}`] = 1;
+                 });
+                 
+                 // --- NEW 2-DEGREE LOGIC ---
+
+                 // This set will hold all nodes to show (L0, L1, and L2)
+                 const visibleNodes = new Set([d.id]); // L0 (the clicked node)
+                 
+                 // This set will temporarily hold just the L1 neighbors
+                 const levelOneNeighbors = new Set();
+
+                 // 1. First Pass: Find 1st-Degree (L1) Neighbors
+                 graph.nodes.forEach(n => {
+                     if (linkedByIndex[`${d.id},${n.id}`]) {
+                         visibleNodes.add(n.id);      // Add L1 node to the visible set
+                         levelOneNeighbors.add(n.id); // Add L1 node to its own set for the next pass
+                     }
+                 });
+
+                 // 2. Second Pass: Find 2nd-Degree (L2) Neighbors
+                 graph.nodes.forEach(n => {
+                    // Skip any node we already have (L0 or L1)
+                    if (visibleNodes.has(n.id)) return;
+
+                    // Check if this node 'n' is connected to *any* L1 neighbor
+                    for (const l1_id of levelOneNeighbors) {
+                        if (linkedByIndex[`${n.id},${l1_id}`]) {
+                            visibleNodes.add(n.id); // It's an L2 node, add it and stop checking
+                            break;
+                        }
+                    }
+                 });
+                 
+                 // --- END NEW 2-DEGREE LOGIC ---
+
+
+                 // 3. Apply Node/Label Filters
+                 // Use the new 'visibleNodes' set
+                 node.style("opacity", n => visibleNodes.has(n.id) ? 1.0 : 0.1);
+                 label.style("opacity", l => visibleNodes.has(l.id) ? 1.0 : 0.1);
+                 
+                 // 4. UPDATED Link/Label Filters
+                 // Show a link if *both* its source and target are visible
+                 link.style("stroke-opacity", l => 
+                    (visibleNodes.has(l.source.id) && visibleNodes.has(l.target.id)) ? 0.6 : 0.05
+                 );
+                 linkLabel.style("opacity", l => 
+                    (visibleNodes.has(l.source.id) && visibleNodes.has(l.target.id)) ? 1.0 : 0.1
+                 );
+            }
+        }
+
+        function resetGraphView() {
+            node.style("opacity", 1.0);
+            label.style("opacity", 1.0);
+            link.style("stroke-opacity", 0.6);
+            linkLabel.style("opacity", 1.0); // UPDATED: Reset link label opacity
+            isFiltered = false;
+            activeNode = null;
+        }
+
+        svg.on("click", (event) => {
+             if (event.target.tagName === 'svg' && !isSpacebarPressed) {
+                 resetGraphView();
+             }
+        });
+
+        // 5. Drag to "Sticky Pin"
+        function drag(simulation) {
+            function dragstarted(event, d) {
+                if (isSpacebarPressed) return;
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                if (isSpacebarPressed) return;
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (isSpacebarPressed) return;
+                if (!event.active) simulation.alphaTarget(0);
+                // Sticky pin: do not reset fx, fy
+            }
+
+            return d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended);
+        }
+
+
+        // --- INITIALIZATION ---
+        
+        let graph; // Global graph
+        
+        // This function now parses the 'csvDataString' variable from above.
+        // It no longer uses an external file or the old hard-coded data.
+        function initialize() {
+            buildLegend();
+            
+            try {
+                // 1. Parse the CSV data string
+                const loadedData = d3.csvParse(csvDataString);
+
+                // 2. Process the loaded data
+                graph = processData(loadedData); 
+                
+                // 3. Update the graph
+                updateGraph(graph);
+
+            } catch (error) {
+                console.error("Error parsing CSV data string:", error);
+                // Display a user-friendly error message
+                d3.select("body").append("div")
+                    .style("position", "absolute")
+                    .style("top", "50%")
+                    .style("left", "50%")
+                    .style("transform", "translate(-50%, -50%)")
+                    .style("padding", "20px")
+                    .style("background", "#ffe0e0")
+                    .style("border", "1px solid #dc3545")
+                    .style("border-radius", "8px")
+                    .style("font-family", "Arial, sans-serif")
+                    .style("color", "#721c24")
+                    .html(`<strong>Error: Could not parse data.</strong><br><br>
+                           Please make sure you have copied the full contents
+                           of your <code>nodes_relationships.csv</code> file
+                           into the <code>csvDataString</code> variable in the script.`);
+            }
+        }
+
+        // Run the graph
+        initialize();
+
+    </script>
+
+</body>
+</html>
+
