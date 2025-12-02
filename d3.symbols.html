@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Symbol Catalog</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 40px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+
+        /* Container to mimic the Legend look on a white page */
+        .catalog-container {
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #e0e0e0;
+            max-width: 400px; /* Constrain width to look like a legend column */
+        }
+
+        h3 {
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        /* --- EXACT LEGEND CSS FROM YOUR REFERENCE --- */
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .legend-swatch {
+            width: 16px;
+            height: 16px;
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .legend-swatch svg {
+            width: 16px; /* Matching your reference */
+            height: 16px;
+            background-color: transparent;
+            overflow: visible; /* Important for strokes not to clip */
+        }
+        .legend-label {
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="catalog-container">
+    <h3>Symbol Catalog</h3>
+    <div id="catalog-content"></div>
+</div>
+
+<script>
+    
+
+// --- DESIGN SYSTEM ---
+        // This is our "single source of truth" for all classes.
+        // =======================================================================
+        // ==  Cut and paste an exiarinf class to create new class attributes.  ==
+        // ==  Classes are documented in the airtable.                          ==
+        // ======================================================================= 
+        const styleConfig = {
+            'Ability': {
+                symbol: d3.symbolTriangle,
+                color: "#6B36AE",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Account': {
+                symbol: d3.symbolDiamond2,
+                color: "#E10014",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+             'Account Attribute': {
+                symbol: d3.symbolPlus,
+                color: "#E10014",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+            'Account Profile': {
+                symbol: d3.symbolDiamond2,
+                color: "#E10014",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Authentication': {
+                symbol: d3.symbolTimes,
+                color: "#9D2B69",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Capability': {
+                symbol: d3.symbolSquare,
+                color: "#1E1E1E",
+                size: 200,
+                style: "Fill",
+                radius: 10
+            },
+            'Channel': {
+                symbol: d3.symbolCircle,
+                color: "#9D2B69",
+                size: 200,
+                style: "Fill",
+                radius: 10
+            },
+            'Credentential': {
+                symbol: d3.symbolTimes,
+                color: "#FABBC3",
+                size: 130,
+                style: "Stroke",
+                radius: 10
+            },
+            'Credit Check': {
+                symbol: d3.symbolTimes,
+                color: "#1E1E1E",
+                size: 200,
+                style: "Stroke",
+                radius: 10
+            },
+            'Database': {
+                symbol: d3.symbolPlus,
+                color: "#1E1E1E",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+            'Derived': {
+                symbol: d3.symbolDiamond2,
+                color: "#1E1E1E",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Device': {
+                symbol: d3.symbolSquare2,
+                color: "#E10014",
+                size: 200,
+                style: "Stroke",
+                radius: 10
+            },
+            'Device Group': {
+                symbol: d3.symbolCircle,
+                color: "#E10014",
+                size: 130,
+                style: "Stroke",
+                radius: 8
+            },
+            'Device Identifier': {
+                symbol: d3.symbolPlus,
+                color: "#FABBC3",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+            'Event': {
+                symbol: d3.symbolStar,
+                color: "#FABBC3",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+            'Group': {
+                symbol: d3.symbolCircle,
+                color: "#6B36AE",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Human': {
+                symbol: d3.symbolStar,
+                color: "#6B36AE",
+                size: 500, // User request
+                style: "Fill",
+                radius: 11
+            },
+            'Identity Attribute': {
+                symbol: d3.symbolPlus,
+                color: "#9D2B69",
+                size: 100,
+                style: "Stroke",
+                radius: 8
+            },
+            'Individual Profile': {
+                symbol: d3.symbolDiamond2,
+                color: "#9D2B69",
+                size: 600,
+                style: "Fill",
+                radius: 8
+            },
+            'Intent': {
+                symbol: d3.symbolTriangle,
+                color: "#6B36AE",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Interaction': {
+                symbol: d3.symbolAsterisk,
+                color: "#FABBC3",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Line': {
+                symbol: d3.symbolWye,
+                color: "#E10014",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Line Attribute': {
+                symbol: d3.symbolWye,
+                color: "#FABBC3",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+             'Organization': {
+                symbol: d3.symbolDiamond2,
+                color: "#9D2B69",
+                size: 250,
+                style: "Stroke",
+                radius: 8
+            },
+            'Payment': {
+                symbol: d3.symbolAsterisk,
+                color: "#9D2B69",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Permission': {
+                symbol: d3.symbolDiamond,
+                color: "#9D2B69",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Preference': {
+                symbol: d3.symbolTriangle,
+                color: "#9D2B69",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Product': {
+                symbol: d3.symbolSquare,
+                color: "#E10014",
+                size: 400, // User request
+                style: "Fill",
+                radius: 14 // Collision radius
+            },
+            'Role': {
+                symbol: d3.symbolCircle,
+                color: "#6B36AE",
+                size: 150,
+                style: "Fill",
+                radius: 8
+            },
+            'Service': {
+                symbol: d3.symbolSquare2,
+                color: "#FABBC3",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Session': {
+                symbol: d3.symbolTriangle2,
+                color: "#9D2B69",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Setting': {
+                symbol: d3.symbolTimes,
+                color: "#A0A0A0",
+                size: 150,
+                style: "Stroke",
+                radius: 8
+            },
+            'Sub Account': {
+                symbol: d3.symbolDiamond2,
+                color: "#FABBC3",
+                size: 130,
+                style: "Stroke",
+                radius: 8
+            },
+            'Unknown': { // Fallback for unmatched types
+                symbol: d3.symbolCircle,
+                color: "#ced4da",
+                size: 100,
+                style: "Fill",
+                radius: 7
+            }
+        };
+
+    // --- 3. MAIN LOGIC (Universal Loader) ---
+    
+    // Function to run after we determine the type
+    function startApp(requestedType) {
+        if (requestedType) {
+            renderSingleSymbol(requestedType);
+        } else {
+            renderCatalog();
+        }
+    }
+
+    // A. Check if running on Google Apps Script
+    if (typeof google !== 'undefined' && google.script && google.script.url) {
+        google.script.url.getLocation(function(location) {
+            // Apps Script passes parameters in a 'location' object
+            const typeParam = location.parameter && location.parameter.type;
+            startApp(typeParam);
+        });
+    } 
+    // B. Fallback for standard hosting
+    else {
+        const urlParams = new URLSearchParams(window.location.search);
+        const typeParam = urlParams.get('type');
+        startApp(typeParam);
+    }
+
+    // --- 4. RENDER MODES ---
+
+    // MODE A: SINGLE SYMBOL
+    function renderSingleSymbol(typeKey) {
+        // Handle case sensitivity (optional safety)
+        // Find a key that matches case-insensitively if exact match fails
+        let matchKey = typeKey;
+        if (!styleConfig[matchKey]) {
+             const found = Object.keys(styleConfig).find(k => k.toLowerCase() === typeKey.toLowerCase());
+             if (found) matchKey = found;
+        }
+
+        const config = styleConfig[matchKey] || styleConfig['Unknown'];
+        
+        // Hide Catalog
+        d3.select(".catalog-container").style("display", "none");
+
+        // Set up Body for Single Icon
+        d3.select("body")
+            .style("margin", "0")
+            .style("display", "flex")
+            .style("align-items", "center")
+            .style("justify-content", "center")
+            .style("height", "100vh")
+            .style("background", "transparent");
+
+        const container = d3.select("body").append("div");
+        
+        const svg = container.append("svg")
+            .attr("width", 200)
+            .attr("height", 200)
+            .style("overflow", "visible");
+
+        svg.append("path")
+            .attr("d", d3.symbol()
+                .type(config.symbol)
+                .size(config.size * 20) // 20x Scale for visibility
+            )
+            .attr("transform", "translate(100, 100)")
+            .style("fill", config.style === "Fill" ? config.color : "white")
+            .style("stroke", config.color)
+            .style("stroke-width", 3);
+            
+        // Label
+        container.append("div")
+            .style("text-align", "center")
+            .style("font-family", "sans-serif")
+            .style("font-weight", "bold")
+            .style("margin-top", "10px")
+            .style("color", "#333")
+            .text(matchKey);
+    }
+
+    // MODE B: CATALOG
+    function renderCatalog() {
+        const container = d3.select("#catalog-content");
+        
+        Object.keys(styleConfig).forEach(type => {
+            const config = styleConfig[type];
+            const item = container.append("div").attr("class", "legend-item");
+            const swatch = item.append("div").attr("class", "legend-swatch");
+            const svg = swatch.append("svg").attr("width", 18).attr("height", 18);
+
+            svg.append("path")
+                .attr("d", d3.symbol().type(config.symbol).size(config.size * 0.5))
+                .attr("transform", "translate(9, 9)")
+                .style("fill", config.style === "Fill" ? config.color : "white")
+                .style("stroke", config.color)
+                .style("stroke-width", 2.5);
+
+            item.append("div").attr("class", "legend-label").text(type);
+        });
+    }
+</script>
+
+</body>
+</html>
